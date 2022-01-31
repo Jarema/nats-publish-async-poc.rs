@@ -23,6 +23,7 @@ fn main() {
         }
         con.flush().await;
         println!("elapsed: {:?}", now.elapsed());
+        con.shutdown().await;
     })
 }
 
@@ -34,7 +35,6 @@ impl Connection {
     async fn connect() -> Connection {
         let socket = tokio::net::TcpSocket::new_v4().unwrap();
         let addr = "127.0.0.1:4222".parse().unwrap();
-        // socket.set_send_buffer_size( 1024).unwrap();
         let con = socket.connect(addr).await.unwrap();
         con.set_nodelay(false).unwrap();
         let (read, writer) = con.into_split();
@@ -78,8 +78,6 @@ impl Connection {
                 .write_all(b"PONG\r\n")
                 .await
                 .unwrap(),
-            Op::Raw(data) => self.writer.lock().await.write_all(&data).await.unwrap(),
-            Op::Flush => self.writer.lock().await.flush().await.unwrap(),
             Op::Publish(subject, payload) => {
                 let mut writer = self.writer.lock().await;
                 writer.write_all(b"PUB ").await.unwrap();
@@ -92,17 +90,18 @@ impl Connection {
                     .await
                     .unwrap();
                 writer.write_all(b"\r\n").await.unwrap();
-
                 writer.write_all(payload).await.unwrap();
+                writer.write_all(b"\r\n").await.unwrap();
             }
         }
+    }
+    async fn shutdown(&self) {
+        self.writer.lock().await.shutdown().await.unwrap();
     }
 }
 
 #[derive(Debug)]
 enum Op<'a> {
-    Raw(Vec<u8>),
     Pong,
-    Flush,
     Publish(&'a str, &'a [u8]),
 }
