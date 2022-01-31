@@ -1,19 +1,14 @@
 use std::sync::Arc;
-use std::time::Duration;
-
-use bytes::BufMut;
-use parking_lot::lock_api::RawMutex;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
 use tokio::io::BufWriter;
 use tokio::net::tcp::OwnedWriteHalf;
-use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
 
 fn main() {
-    let rt = tokio::runtime::Builder::new_current_thread()
+    let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_io()
         .build()
         .unwrap();
@@ -22,13 +17,8 @@ fn main() {
         let mut con = Connection::connect().await;
         println!("conncted");
         let now = Instant::now();
-        // let mut self.writer = tokio_stream::iter(0..10_000_000);
 
-        // while let Some(_value) = self.writer.next().await {
-        //     con.write(b"pub events.data 2\r\nhi\r\n").await;
-        // }
-
-        for _ in 0..10_000_000 {
+        for _ in 0..100_000_000 {
             con.publish("events.data", b"foo").await;
         }
         con.flush().await;
@@ -49,7 +39,7 @@ impl Connection {
         con.set_nodelay(false).unwrap();
         let (read, writer) = con.into_split();
         let mut read = BufReader::new(read);
-        let mut writer = BufWriter::new(writer);
+        let writer = BufWriter::new(writer);
 
         let writer = Arc::new(Mutex::new(writer));
         writer.lock().await.write_all(b"CONNECT { \"no_responders\": true, \"headers\": true, \"verbose\": false, \"pedantic\": false }\r\n").await.unwrap();
@@ -104,27 +94,6 @@ impl Connection {
                 writer.write_all(b"\r\n").await.unwrap();
 
                 writer.write_all(payload).await.unwrap();
-                writer.write_all(b"\r\n").await.unwrap();
-
-                // let mut buf = bytes::BytesMut::with_capacity(payload.len() + subject.len());
-
-                // buf.put(&b"PUB "[..]);
-                // buf.put(subject.as_bytes());
-                // buf.put(&b" "[..]);
-
-                // let mut buflen = itoa::Buffer::new();
-                // buf.put(buflen.format(payload.len()).as_bytes());
-                // buf.put(&b"\r\n"[..]);
-
-                // buf.put(&*payload);
-                // buf.put(&b"\r\n"[..]);
-
-                // self.writer
-                //     .lock()
-                //     .await
-                //     .write_all_buf(&mut buf)
-                //     .await
-                //     .unwrap();
             }
         }
     }
