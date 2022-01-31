@@ -9,7 +9,6 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::time::Instant;
-use tokio_stream::StreamExt;
 
 fn main() {
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -22,9 +21,9 @@ fn main() {
         println!("conncted");
         std::thread::sleep(Duration::from_secs(2));
         let now = Instant::now();
-        // let mut stream = tokio_stream::iter(0..10_000_000);
+        // let mut self.writer = tokio_stream::iter(0..10_000_000);
 
-        // while let Some(_value) = stream.next().await {
+        // while let Some(_value) = self.writer.next().await {
         //     con.write(b"pub events.data 2\r\nhi\r\n").await;
         // }
 
@@ -33,6 +32,9 @@ fn main() {
             //     .await;
             con.publish(format!("events.{}", i).as_str(), b"some data")
                 .await;
+            if 0 == i % 1000000 {
+                con.encode(Op::Pong).await;
+            }
         }
         con.flush().await;
         println!("elapsed: {:?}", now.elapsed());
@@ -41,43 +43,18 @@ fn main() {
 
 struct Connection {
     tx: UnboundedSender<Op>,
+    writer: OwnedWriteHalf,
 }
 
 impl Connection {
     async fn connect() -> Connection {
         let con = TcpStream::connect("localhost:4222").await.unwrap();
-        let (read, mut write) = con.into_split();
+        let (read, mut writer) = con.into_split();
         let mut read = BufReader::new(read);
 
         let (tx, mut rx): (UnboundedSender<Op>, UnboundedReceiver<Op>) =
             tokio::sync::mpsc::unbounded_channel();
-        write.write_all(b"CONNECT { \"no_responders\": true, \"headers\": true, \"verbose\": false, \"pedantic\": false }\r\n").await.unwrap();
-
-        tokio::task::spawn(async move {
-            loop {
-                let data = rx.recv().await.unwrap();
-                match data {
-                    Op::Pong => write.write_all(b"PONG\r\n").await.unwrap(),
-                    Op::Raw(data) => write.write_all(&data).await.unwrap(),
-                    Op::Flush => write.flush().await.unwrap(),
-                    Op::Publish(subject, payload, resp) => {
-                        let mut buf = bytes::BytesMut::with_capacity(payload.len());
-
-                        buf.put(&b"PUB "[..]);
-                        buf.put(subject.as_bytes());
-                        buf.put(&b" "[..]);
-                        let mut ibuf = itoa::Buffer::new();
-                        buf.put(ibuf.format(payload.len()).as_bytes());
-                        buf.put(&b"\r\n"[..]);
-                        buf.put(&*payload);
-                        buf.put(&b"\r\n"[..]);
-
-                        write.write_all(&buf).await.unwrap();
-                        resp.send(()).unwrap();
-                    }
-                }
-            }
-        });
+        writer.write_all(b"CONNECT { \"no_responders\": true, \"headers\": true, \"verbose\": false, \"pedantic\": false }\r\n").await.unwrap();
 
         {
             let tx = tx.clone();
@@ -88,29 +65,46 @@ impl Connection {
                     if n == 0 {
                         break;
                     }
-                    println!("MESSAGE FROM SERVER: {:?}", buf);
-                    if buf == "PING\r\n" {
-                        tx.send(Op::Pong).unwrap();
-                    }
+                    println!("MESSAGE FROM SERVER: {:}", buf);
+                    if buf == "PING\r\n" {}
                 }
             });
         }
 
-        Connection { tx }
+        Connection { tx, writer }
     }
 
     async fn write(&mut self, data: &[u8]) {
         self.tx.send(Op::Raw(data.to_vec())).unwrap();
     }
     async fn flush(&mut self) {
-        self.tx.send(Op::Flush).unwrap();
+        self.writer.flush().await.unwrap();
     }
-    async fn publish(&self, subject: &str, payload: &[u8]) {
-        let (otx, orx) = tokio::sync::oneshot::channel();
-        self.tx
-            .send(Op::Publish(subject.to_string(), payload.to_vec(), otx))
-            .unwrap();
-        orx.await.unwrap();
+    async fn publish(&mut self, subject: &str, payload: &[u8]) {
+        self.encode(Op::Publish(subject.to_string(), payload.to_vec()))
+            .await;
+    }
+    async fn encode(&mut self, op: Op) {
+        match op {
+            Op::Pong => self.writer.write_all(b"PONG\r\n").await.unwrap(),
+            Op::Raw(data) => self.writer.write_all(&data).await.unwrap(),
+            Op::Flush => self.writer.flush().await.unwrap(),
+            Op::Publish(subject, payload) => {
+                let mut buf = bytes::BytesMut::with_capacity(payload.len() + subject.len());
+                buf.put(&b"PUB "[..]);
+                buf.put(subject.as_bytes());
+                buf.put(&b" "[..]);
+
+                let mut buflen = itoa::Buffer::new();
+                buf.put(buflen.format(payload.len()).as_bytes());
+                buf.put(&b"\r\n"[..]);
+
+                buf.put(&*payload);
+                buf.put(&b"\r\n"[..]);
+
+                self.writer.write_all_buf(&mut buf).await.unwrap();
+            }
+        }
     }
 }
 
@@ -119,5 +113,5 @@ enum Op {
     Raw(Vec<u8>),
     Pong,
     Flush,
-    Publish(String, Vec<u8>, tokio::sync::oneshot::Sender<()>),
+    Publish(String, Vec<u8>),
 }
