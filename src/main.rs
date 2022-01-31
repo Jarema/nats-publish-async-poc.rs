@@ -38,7 +38,6 @@ fn main() {
 }
 
 struct Connection {
-    tx: UnboundedSender<Op>,
     writer: Arc<Mutex<OwnedWriteHalf>>,
 }
 
@@ -70,20 +69,16 @@ impl Connection {
             });
         }
 
-        Connection { tx, writer }
+        Connection { writer }
     }
 
-    async fn write(&mut self, data: &[u8]) {
-        self.tx.send(Op::Raw(data.to_vec())).unwrap();
-    }
     async fn flush(&mut self) {
         self.writer.lock().await.flush().await.unwrap();
     }
-    async fn publish(&mut self, subject: &str, payload: &[u8]) {
-        self.encode(Op::Publish(subject.to_string(), payload.to_vec()))
-            .await;
+    async fn publish<'a>(&mut self, subject: &'a str, payload: &[u8]) {
+        self.encode(Op::Publish(subject, payload)).await;
     }
-    async fn encode(&mut self, op: Op) {
+    async fn encode<'a>(&mut self, op: Op<'a>) {
         match op {
             Op::Pong => self
                 .writer
@@ -119,9 +114,9 @@ impl Connection {
 }
 
 #[derive(Debug)]
-enum Op {
+enum Op<'a> {
     Raw(Vec<u8>),
     Pong,
     Flush,
-    Publish(String, Vec<u8>),
+    Publish(&'a str, &'a [u8]),
 }
