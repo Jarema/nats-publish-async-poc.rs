@@ -7,8 +7,6 @@ use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::TcpStream;
-use tokio::sync::mpsc::UnboundedReceiver;
-use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
 
@@ -21,7 +19,6 @@ fn main() {
     rt.block_on(async move {
         let mut con = Connection::connect().await;
         println!("conncted");
-        std::thread::sleep(Duration::from_secs(2));
         let now = Instant::now();
         // let mut self.writer = tokio_stream::iter(0..10_000_000);
 
@@ -44,11 +41,8 @@ struct Connection {
 impl Connection {
     async fn connect() -> Connection {
         let con = TcpStream::connect("localhost:4222").await.unwrap();
-        let (read, mut writer) = con.into_split();
+        let (read, writer) = con.into_split();
         let mut read = BufReader::new(read);
-
-        let (tx, mut rx): (UnboundedSender<Op>, UnboundedReceiver<Op>) =
-            tokio::sync::mpsc::unbounded_channel();
 
         let writer = Arc::new(Mutex::new(writer));
         writer.lock().await.write_all(b"CONNECT { \"no_responders\": true, \"headers\": true, \"verbose\": false, \"pedantic\": false }\r\n").await.unwrap();
@@ -75,10 +69,10 @@ impl Connection {
     async fn flush(&mut self) {
         self.writer.lock().await.flush().await.unwrap();
     }
-    async fn publish<'a>(&mut self, subject: &'a str, payload: &[u8]) {
+    async fn publish(&mut self, subject: &str, payload: &[u8]) {
         self.encode(Op::Publish(subject, payload)).await;
     }
-    async fn encode<'a>(&mut self, op: Op<'a>) {
+    async fn encode(&mut self, op: Op<'_>) {
         match op {
             Op::Pong => self
                 .writer
