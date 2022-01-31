@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::BufMut;
@@ -8,6 +9,7 @@ use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::Mutex;
 use tokio::time::Instant;
 
 fn main() {
@@ -43,7 +45,7 @@ fn main() {
 
 struct Connection {
     tx: UnboundedSender<Op>,
-    writer: OwnedWriteHalf,
+    writer: Arc<Mutex<OwnedWriteHalf>>,
 }
 
 impl Connection {
@@ -54,10 +56,12 @@ impl Connection {
 
         let (tx, mut rx): (UnboundedSender<Op>, UnboundedReceiver<Op>) =
             tokio::sync::mpsc::unbounded_channel();
-        writer.write_all(b"CONNECT { \"no_responders\": true, \"headers\": true, \"verbose\": false, \"pedantic\": false }\r\n").await.unwrap();
+
+        let writer = Arc::new(Mutex::new(writer));
+        writer.lock().await.write_all(b"CONNECT { \"no_responders\": true, \"headers\": true, \"verbose\": false, \"pedantic\": false }\r\n").await.unwrap();
 
         {
-            let tx = tx.clone();
+            let writer = writer.clone();
             tokio::task::spawn(async move {
                 loop {
                     let mut buf = String::new();
@@ -65,8 +69,9 @@ impl Connection {
                     if n == 0 {
                         break;
                     }
-                    println!("MESSAGE FROM SERVER: {:}", buf);
-                    if buf == "PING\r\n" {}
+                    if buf == "PING\r\n" {
+                        writer.lock().await.write_all(b"PONG\r\n").await.unwrap();
+                    }
                 }
             });
         }
@@ -78,7 +83,7 @@ impl Connection {
         self.tx.send(Op::Raw(data.to_vec())).unwrap();
     }
     async fn flush(&mut self) {
-        self.writer.flush().await.unwrap();
+        self.writer.lock().await.flush().await.unwrap();
     }
     async fn publish(&mut self, subject: &str, payload: &[u8]) {
         self.encode(Op::Publish(subject.to_string(), payload.to_vec()))
@@ -86,9 +91,15 @@ impl Connection {
     }
     async fn encode(&mut self, op: Op) {
         match op {
-            Op::Pong => self.writer.write_all(b"PONG\r\n").await.unwrap(),
-            Op::Raw(data) => self.writer.write_all(&data).await.unwrap(),
-            Op::Flush => self.writer.flush().await.unwrap(),
+            Op::Pong => self
+                .writer
+                .lock()
+                .await
+                .write_all(b"PONG\r\n")
+                .await
+                .unwrap(),
+            Op::Raw(data) => self.writer.lock().await.write_all(&data).await.unwrap(),
+            Op::Flush => self.writer.lock().await.flush().await.unwrap(),
             Op::Publish(subject, payload) => {
                 let mut buf = bytes::BytesMut::with_capacity(payload.len() + subject.len());
                 buf.put(&b"PUB "[..]);
@@ -102,7 +113,12 @@ impl Connection {
                 buf.put(&*payload);
                 buf.put(&b"\r\n"[..]);
 
-                self.writer.write_all_buf(&mut buf).await.unwrap();
+                self.writer
+                    .lock()
+                    .await
+                    .write_all_buf(&mut buf)
+                    .await
+                    .unwrap();
             }
         }
     }
