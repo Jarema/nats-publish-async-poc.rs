@@ -13,8 +13,8 @@ use tokio::sync::Mutex;
 use tokio::time::Instant;
 
 fn main() {
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_io()
         .build()
         .unwrap();
 
@@ -29,14 +29,8 @@ fn main() {
         //     con.write(b"pub events.data 2\r\nhi\r\n").await;
         // }
 
-        for i in 0..10_000_000 {
-            // con.write(format!("pub events.{} 2\r\nhi\r\n", i).as_bytes())
-            //     .await;
-            con.publish(format!("events.{}", i).as_str(), b"some data")
-                .await;
-            if 0 == i % 1000000 {
-                con.encode(Op::Pong).await;
-            }
+        for _ in 0..10_000_000 {
+            con.publish("events.data", b"foo").await;
         }
         con.flush().await;
         println!("elapsed: {:?}", now.elapsed());
