@@ -5,10 +5,10 @@ POC for performance capabilities of `tokio` `TCPStream` in context of `NATS` pub
 Tokio client:  
 `cargo run --bin tokio-client --release`
 
-async-std client:
+async-std client:  
 `cargo run --bin async-std-client --release`
 
-sync client:
+sync client:  
 `cargo run --bin sync-client --release`
 
 Crate `nats-async` contains async tokio client.  
