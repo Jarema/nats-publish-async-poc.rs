@@ -5,34 +5,13 @@ use tokio::io::BufReader;
 use tokio::io::BufWriter;
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::sync::Mutex;
-use tokio::time::Instant;
 
-fn main() {
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_io()
-        .build()
-        .unwrap();
-
-    rt.block_on(async move {
-        let mut con = Connection::connect().await;
-        println!("conncted");
-        let now = Instant::now();
-
-        for _ in 0..100_000_000 {
-            con.publish("events.data", b"foo").await;
-        }
-        con.flush().await;
-        println!("elapsed: {:?}", now.elapsed());
-        con.shutdown().await;
-    })
-}
-
-struct Connection {
+pub struct Connection {
     writer: Arc<Mutex<BufWriter<OwnedWriteHalf>>>,
 }
 
 impl Connection {
-    async fn connect() -> Connection {
+    pub async fn connect() -> Connection {
         let socket = tokio::net::TcpSocket::new_v4().unwrap();
         let addr = "127.0.0.1:4222".parse().unwrap();
         let con = socket.connect(addr).await.unwrap();
@@ -63,13 +42,13 @@ impl Connection {
         Connection { writer }
     }
 
-    async fn flush(&mut self) {
+    pub async fn flush(&mut self) {
         self.writer.lock().await.flush().await.unwrap();
     }
-    async fn publish(&mut self, subject: &str, payload: &[u8]) {
+    pub async fn publish(&mut self, subject: &str, payload: &[u8]) {
         self.encode(Op::Publish(subject, payload)).await;
     }
-    async fn encode(&mut self, op: Op<'_>) {
+    pub async fn encode(&mut self, op: Op<'_>) {
         match op {
             Op::Pong => self
                 .writer
@@ -95,13 +74,13 @@ impl Connection {
             }
         }
     }
-    async fn shutdown(&self) {
+    pub async fn shutdown(&self) {
         self.writer.lock().await.shutdown().await.unwrap();
     }
 }
 
 #[derive(Debug)]
-enum Op<'a> {
+pub enum Op<'a> {
     Pong,
     Publish(&'a str, &'a [u8]),
 }
