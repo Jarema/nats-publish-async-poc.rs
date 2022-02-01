@@ -6,12 +6,12 @@ use tokio::io::BufWriter;
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::sync::Mutex;
 
-pub struct Connection {
+pub struct Client {
     writer: Arc<Mutex<BufWriter<OwnedWriteHalf>>>,
 }
 
-impl Connection {
-    pub async fn connect() -> Connection {
+impl Client {
+    pub async fn connect() -> Client {
         let socket = tokio::net::TcpSocket::new_v4().unwrap();
         let addr = "127.0.0.1:4222".parse().unwrap();
         let con = socket.connect(addr).await.unwrap();
@@ -39,7 +39,7 @@ impl Connection {
             });
         }
 
-        Connection { writer }
+        Client { writer }
     }
 
     pub async fn flush(&mut self) {

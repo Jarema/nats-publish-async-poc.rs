@@ -4,5 +4,6 @@ members = [
 	"nats-async",
 	"tokio-client",
 	"async-std-client",
-	"sync-client"
+	"sync-client",
+	"nats-sync"
 ]

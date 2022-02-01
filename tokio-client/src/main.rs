@@ -1,4 +1,4 @@
-use nats_async::Connection;
+use nats_async::Client;
 use tokio::time::Instant;
 
 fn main() {
@@ -8,7 +8,7 @@ fn main() {
         .unwrap();
 
     rt.block_on(async move {
-        let mut con = Connection::connect().await;
+        let mut con = Client::connect().await;
         println!("conncted");
         let now = Instant::now();
 
