@@ -6,13 +6,13 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn connect() -> Client {
+    pub fn connect(conn_str: &str) -> Client {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap();
 
-        let inner = rt.block_on(nats_async::Client::connect());
+        let inner = rt.block_on(nats_async::Client::connect(conn_str));
 
         Client { inner, rt }
     }

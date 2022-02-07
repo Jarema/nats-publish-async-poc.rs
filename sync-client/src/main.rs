@@ -2,7 +2,7 @@ use nats_sync::Client;
 use std::time::Instant;
 
 fn main() {
-    let mut con = Client::connect();
+    let mut con = Client::connect("127.0.0.1:4222");
     println!("conncted");
     let now = Instant::now();
 

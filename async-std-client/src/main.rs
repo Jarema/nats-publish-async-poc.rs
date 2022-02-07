@@ -9,7 +9,7 @@ async fn main() {
     //     .unwrap();
 
     // rt.block_on(async move {
-    let mut con = Client::connect().await;
+    let mut con = Client::connect("127.0.0.1:4222").await;
     println!("conncted");
     let now = Instant::now();
 
