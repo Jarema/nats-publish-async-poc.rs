@@ -41,7 +41,7 @@ async fn subscribe(mut nc: nats_async::Client) {
         if i == 0 {
             now = Instant::now();
         }
-        sub.recv.recv_async().await.unwrap();
+        sub.recv.recv().await;
     }
     println!("consumed messages in {:?}", now.elapsed());
 }

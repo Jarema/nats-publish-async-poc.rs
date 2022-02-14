@@ -1,5 +1,3 @@
-use std::net::{SocketAddr, ToSocketAddrs};
-use std::ops::Sub;
 use std::str::{self, FromStr};
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
@@ -11,7 +9,7 @@ use tokio::sync::Mutex;
 
 pub struct Client {
     writer: Arc<Mutex<BufWriter<OwnedWriteHalf>>>,
-    recv: flume::Receiver<Message>,
+    recv: tokio::sync::mpsc::UnboundedReceiver<Message>,
 }
 
 impl Client {
@@ -21,7 +19,8 @@ impl Client {
         let (read, writer) = con.into_split();
         let mut read = BufReader::new(read);
         let writer = BufWriter::new(writer);
-        let (tx, rx) = flume::unbounded();
+        // let (tx, rx) = flume::unbounded();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 
         let writer = Arc::new(Mutex::new(writer));
         writer.lock().await.write_all(b"CONNECT { \"no_responders\": true, \"headers\": true, \"verbose\": false, \"pedantic\": false }\r\n").await.unwrap();
@@ -89,7 +88,7 @@ impl Client {
                         // Read "\r\n".
                         read.read_exact(&mut [0_u8; 2]).await.unwrap();
                         let msg = Message { payload };
-                        tx.send_async(msg).await.unwrap();
+                        tx.send(msg).unwrap();
                     }
                 }
             });
@@ -104,12 +103,12 @@ impl Client {
     pub async fn publish(&mut self, subject: &str, payload: &[u8]) {
         self.encode(Op::Publish(subject, payload)).await;
     }
-    pub async fn subscribe(&mut self, subject: &str) -> Subscription {
+    pub async fn subscribe(&mut self, subject: &str) -> Subscription<'_> {
         println!("subscribing");
         self.encode(Op::Subscribe(subject)).await;
         self.flush().await;
         Subscription {
-            recv: self.recv.clone(),
+            recv: &mut self.recv,
         }
     }
 
@@ -158,8 +157,8 @@ pub enum Op<'a> {
     Subscribe(&'a str),
 }
 
-pub struct Subscription {
-    pub recv: flume::Receiver<Message>,
+pub struct Subscription<'a> {
+    pub recv: &'a mut tokio::sync::mpsc::UnboundedReceiver<Message>,
 }
 
 #[derive(Debug)]
