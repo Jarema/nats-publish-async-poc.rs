@@ -105,7 +105,9 @@ impl Client {
         self.encode(Op::Publish(subject, payload)).await;
     }
     pub async fn subscribe(&mut self, subject: &str) -> Subscription {
+        println!("subscribing");
         self.encode(Op::Subscribe(subject)).await;
+        self.flush().await;
         Subscription {
             recv: self.recv.clone(),
         }
